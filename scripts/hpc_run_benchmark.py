@@ -23,7 +23,7 @@ def main() -> None:
     tag = args.tag or os.getenv("SLURM_JOB_ID") or args.device
     results_subdir = f"hpc_{tag}"
 
-    command = [str(ROOT / "project1" / "bin" / "python"), str(ROOT / "scripts" / "run_benchmark.py")]
+    command = [sys.executable, str(ROOT / "scripts" / "run_benchmark.py")]
     command += ["--device", args.device, "--tag", tag, "--results-subdir", results_subdir]
     command += ["--frameworks", *args.frameworks]
     if args.repeats is not None:
@@ -40,4 +40,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
