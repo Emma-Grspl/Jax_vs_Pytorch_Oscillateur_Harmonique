@@ -38,6 +38,11 @@ def global_grad_clip(grads, max_norm: float):
     return clipped, global_norm
 
 
+def trapezoidal_integral(y: jax.Array, x: jax.Array) -> jax.Array:
+    dx = x[1:] - x[:-1]
+    return jnp.sum(0.5 * (y[1:] + y[:-1]) * dx)
+
+
 class JAXTrainer:
     def __init__(self, config: dict) -> None:
         self.config = config
@@ -90,7 +95,7 @@ class JAXTrainer:
         psi_boundary = mlp_forward(params["network"], self.x_boundary, self.activation)
         loss_boundary = jnp.mean(psi_boundary**2)
 
-        norm = jnp.trapezoid(psi_values**2, self.x_collocation.squeeze(-1))
+        norm = trapezoidal_integral(psi_values**2, self.x_collocation.squeeze(-1))
         loss_norm = (norm - 1.0) ** 2
 
         psi_zero = self._psi_scalar(params, jnp.array(0.0, dtype=jnp.float32))
