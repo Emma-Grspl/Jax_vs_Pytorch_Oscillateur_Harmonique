@@ -16,6 +16,7 @@ set -euo pipefail
 
 module purge
 module load pytorch-gpu/py3/2.1.1
+source /lustre/fswork/projects/rech/fdb/usv13rn/venvs/jax_adr/bin/activate
 
 mkdir -p slurm/log
 
