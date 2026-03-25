@@ -16,7 +16,6 @@ set -euo pipefail
 
 module purge
 module load pytorch-gpu/py3/2.1.1
-source /lustre/fswork/projects/rech/fdb/usv13rn/venvs/jax_adr/bin/activate
 
 mkdir -p slurm/log
 
@@ -24,9 +23,13 @@ echo "Job on ${SLURMD_NODENAME:-unknown-node}"
 date
 nvidia-smi
 
-# Si tu as un environnement JAX dedie sur Jean Zay, active-le ici.
-# Sans cette ligne, le job fonctionnera pour PyTorch mais JAX risque d'etre absent.
-# source /path/to/your/jax-env/bin/activate
+# Active un environnement JAX additionnel seulement si tu le fournis explicitement.
+# Exemple:
+# export JAX_ENV_PATH=/lustre/fswork/projects/rech/fdb/usv13rn/venvs/jax_pinn_gpu311
+# sbatch launch/jz_submit.slurm
+if [ -n "${JAX_ENV_PATH:-}" ]; then
+  source "${JAX_ENV_PATH}/bin/activate"
+fi
 
 export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-10}"
@@ -47,6 +50,12 @@ fi
 
 echo "Using Python: ${PYTHON_BIN}"
 "${PYTHON_BIN}" --version
+
+echo "Torch check:"
+"${PYTHON_BIN}" -c "import torch; print(torch.__version__)"
+
+echo "JAX check:"
+"${PYTHON_BIN}" -c "import jax, jaxlib; print(jax.__version__); print(jaxlib.__version__); print(jax.devices())"
 
 srun "${PYTHON_BIN}" -u scripts/hpc_run_benchmark.py \
   --device cuda \
