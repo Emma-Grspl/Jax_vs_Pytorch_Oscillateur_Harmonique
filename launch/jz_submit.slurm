@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=10
 #SBATCH --hint=nomultithread
-#SBATCH --time=20:00:00
+#SBATCH --time=05:00:00
 #SBATCH --qos=qos_gpu-t3
 
 set -euo pipefail
