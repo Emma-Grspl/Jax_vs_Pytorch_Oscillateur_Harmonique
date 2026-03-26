@@ -5,14 +5,47 @@ import copy
 import sys
 from pathlib import Path
 
+import numpy as np
+import torch
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
+from src.quantum_pinn.artifacts import save_benchmark_run_artifacts
 from src.quantum_pinn.benchmark import summarize_runs, write_csv, write_markdown_report
 from src.quantum_pinn.config import load_config, resolve_framework_config
 from src.quantum_pinn.io import ensure_dir, write_json
+from src.quantum_pinn.metrics import align_sign
+from src.quantum_pinn.problem import reference_solution
 from src.quantum_pinn.runner import run_jax_once, run_pytorch_once
 from src.quantum_pinn.system_info import get_system_info
+
+
+def _build_predictions(framework: str, config: dict, model_or_params):
+    x_eval, psi_exact, _ = reference_solution(config["problem"])
+    if framework == "pytorch":
+        model_or_params.eval()
+        device = next(model_or_params.parameters()).device
+        with torch.no_grad():
+            prediction = model_or_params(
+                torch.tensor(x_eval.reshape(-1, 1), dtype=torch.float32, device=device)
+            ).detach().cpu().numpy().squeeze(-1)
+        return x_eval, psi_exact, align_sign(prediction, psi_exact)
+
+    if framework == "jax":
+        import jax.numpy as jnp
+
+        from src.quantum_pinn.jax.model import build_activation, mlp_forward
+
+        activation = build_activation(config["model"]["activation"])
+        prediction = mlp_forward(
+            model_or_params["network"],
+            jnp.asarray(x_eval.reshape(-1, 1), dtype=jnp.float32),
+            activation,
+        ).squeeze(-1)
+        return x_eval, psi_exact, align_sign(np.asarray(prediction, dtype=np.float32), psi_exact)
+
+    raise ValueError(f"Unsupported framework: {framework}")
 
 
 def main() -> None:
@@ -64,10 +97,24 @@ def main() -> None:
             seed = int(framework_config["experiment"]["seed"]) + warmup + run_idx
             print(f"[{framework}] measured run {run_idx + 1}/{repeats} seed={seed}")
             if framework == "pytorch":
-                metrics, _, _ = run_pytorch_once(copy.deepcopy(framework_config), seed)
+                metrics, history, model_or_params = run_pytorch_once(copy.deepcopy(framework_config), seed)
             else:
-                metrics, _, _ = run_jax_once(copy.deepcopy(framework_config), seed)
+                metrics, history, model_or_params = run_jax_once(copy.deepcopy(framework_config), seed)
             metrics["run_index"] = run_idx
+            x_eval, psi_exact, psi_pred = _build_predictions(framework, framework_config, model_or_params)
+            save_benchmark_run_artifacts(
+                framework_dir=framework_dir,
+                framework=framework,
+                run_index=run_idx,
+                seed=seed,
+                metrics=metrics,
+                history=history,
+                model_or_params=model_or_params,
+                config=framework_config,
+                x_eval=x_eval,
+                psi_exact=psi_exact,
+                psi_pred=psi_pred,
+            )
             run_rows.append(metrics)
             rows.append(metrics)
 
