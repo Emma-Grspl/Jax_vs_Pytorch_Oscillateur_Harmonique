@@ -54,6 +54,9 @@ def main() -> None:
     parser.add_argument("--warmup", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--n-collocation", type=int, default=None)
+    parser.add_argument("--objective", choices=["physics_only", "physics_plus_data"], default=None)
+    parser.add_argument("--n-data", type=int, default=None)
+    parser.add_argument("--lambda-data", type=float, default=None)
     parser.add_argument("--frameworks", nargs="+", choices=["pytorch", "jax"], default=["pytorch", "jax"])
     parser.add_argument("--device", choices=["auto", "cpu", "cuda", "mps"], default=None)
     parser.add_argument("--tag", default=None)
@@ -65,6 +68,12 @@ def main() -> None:
         config["training"]["epochs"] = args.epochs
     if args.n_collocation is not None:
         config["problem"]["n_collocation"] = args.n_collocation
+    if args.objective is not None:
+        config["training"]["objective"] = args.objective
+    if args.n_data is not None:
+        config["training"]["n_supervision_points"] = args.n_data
+    if args.lambda_data is not None:
+        config["training"]["lambda_data"] = args.lambda_data
     if args.device is not None:
         config["training"]["device"] = args.device
     if args.tag is not None:

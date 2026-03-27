@@ -21,10 +21,13 @@ model:
 
 training:
   framework: "pytorch"
+  objective: "physics_only"
   device: "auto"
   epochs: 4000
   learning_rate: 0.001
   min_learning_rate: 0.00005
+  n_supervision_points: 0
+  lambda_data: 0.0
   scheduler:
     type: "plateau"
     factor: 0.5

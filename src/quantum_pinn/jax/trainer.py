@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from src.quantum_pinn.jax.model import build_activation, init_mlp, mlp_forward
+from src.quantum_pinn.problem import supervised_reference_data
 from src.quantum_pinn.scheduler import build_scheduler
 
 
@@ -58,6 +59,9 @@ class JAXTrainer:
             "energy": jnp.array(float(self.train_cfg["energy_init"]), dtype=jnp.float32),
         }
         self.optimizer_state = adam_init(self.params)
+        self.n_supervision_points = int(self.train_cfg.get("n_supervision_points", 0))
+        self.lambda_data = float(self.train_cfg.get("lambda_data", 0.0))
+        self.use_supervision = self.lambda_data > 0.0 and self.n_supervision_points > 0
 
         self.x_collocation = jnp.linspace(
             self.problem_cfg["domain_min"],
@@ -69,6 +73,13 @@ class JAXTrainer:
             [[self.problem_cfg["domain_min"]], [self.problem_cfg["domain_max"]]],
             dtype=jnp.float32,
         )
+        if self.use_supervision:
+            x_supervision_np, psi_supervision_np = supervised_reference_data(self.problem_cfg, self.n_supervision_points)
+            self.x_supervision = jnp.asarray(x_supervision_np.reshape(-1, 1), dtype=jnp.float32)
+            self.psi_supervision = jnp.asarray(psi_supervision_np, dtype=jnp.float32)
+        else:
+            self.x_supervision = None
+            self.psi_supervision = None
 
     def _psi_scalar(self, params, x_scalar: jax.Array) -> jax.Array:
         x = jnp.array([[x_scalar]], dtype=jnp.float32)
@@ -95,6 +106,11 @@ class JAXTrainer:
         psi_x_zero = jax.grad(lambda x_scalar: self._psi_scalar(params, x_scalar))(jnp.array(0.0, dtype=jnp.float32))
         loss_center = psi_x_zero**2
         loss_sign = jax.nn.relu(-psi_zero) ** 2
+        if self.use_supervision:
+            psi_data = mlp_forward(params["network"], self.x_supervision, self.activation).squeeze(-1)
+            loss_data = jnp.mean((psi_data - self.psi_supervision) ** 2)
+        else:
+            loss_data = jnp.array(0.0, dtype=jnp.float32)
 
         total = (
             self.train_cfg["lambda_pde"] * loss_pde
@@ -102,6 +118,7 @@ class JAXTrainer:
             + self.train_cfg["lambda_norm"] * loss_norm
             + self.train_cfg["lambda_center"] * loss_center
             + self.train_cfg["lambda_sign"] * loss_sign
+            + self.lambda_data * loss_data
         )
         return {
             "total": total,
@@ -110,10 +127,11 @@ class JAXTrainer:
             "norm": loss_norm,
             "center": loss_center,
             "sign": loss_sign,
+            "data": loss_data,
         }
 
     def train(self):
-        history = {key: [] for key in ("total", "pde", "boundary", "norm", "center", "sign", "energy", "learning_rate")}
+        history = {key: [] for key in ("total", "pde", "boundary", "norm", "center", "sign", "data", "energy", "learning_rate")}
 
         @jax.jit
         def train_step(params, optimizer_state, learning_rate):
@@ -141,7 +159,7 @@ class JAXTrainer:
         compile_start = time.perf_counter()
         self.params, self.optimizer_state, terms = train_step(self.params, self.optimizer_state, initial_lr)
         compile_seconds = time.perf_counter() - compile_start
-        for key in ("total", "pde", "boundary", "norm", "center", "sign"):
+        for key in ("total", "pde", "boundary", "norm", "center", "sign", "data"):
             history[key].append(float(terms[key]))
         history["energy"].append(float(self.params["energy"]))
         history["learning_rate"].append(float(initial_lr))
@@ -154,7 +172,7 @@ class JAXTrainer:
         for epoch in range(2, self.train_cfg["epochs"] + 1):
             current_lr = jnp.asarray(scheduler.current_lr, dtype=jnp.float32)
             self.params, self.optimizer_state, terms = train_step(self.params, self.optimizer_state, current_lr)
-            for key in ("total", "pde", "boundary", "norm", "center", "sign"):
+            for key in ("total", "pde", "boundary", "norm", "center", "sign", "data"):
                 history[key].append(float(terms[key]))
             history["energy"].append(float(self.params["energy"]))
             history["learning_rate"].append(float(current_lr))

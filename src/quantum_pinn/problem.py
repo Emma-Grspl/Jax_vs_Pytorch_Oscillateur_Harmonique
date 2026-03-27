@@ -69,3 +69,18 @@ def reference_solution(problem_cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndar
     )
     return x, psi, energy
 
+
+def supervised_reference_data(problem_cfg: dict[str, Any], n_points: int) -> tuple[np.ndarray, np.ndarray]:
+    x = create_grid(
+        problem_cfg["domain_min"],
+        problem_cfg["domain_max"],
+        n_points,
+    )
+    psi = analytical_wavefunction(
+        x=x,
+        state_index=problem_cfg["state_index"],
+        mass=problem_cfg["mass"],
+        omega=problem_cfg["omega"],
+        hbar=problem_cfg["hbar"],
+    )
+    return x, psi

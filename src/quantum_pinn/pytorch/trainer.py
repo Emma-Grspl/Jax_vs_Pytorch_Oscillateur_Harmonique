@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from src.quantum_pinn.pytorch.model import QuantumPINN
+from src.quantum_pinn.problem import supervised_reference_data
 from src.quantum_pinn.scheduler import build_scheduler
 
 
@@ -27,6 +28,9 @@ class PyTorchTrainer:
             self.model.parameters(),
             lr=self.train_cfg["learning_rate"],
         )
+        self.n_supervision_points = int(self.train_cfg.get("n_supervision_points", 0))
+        self.lambda_data = float(self.train_cfg.get("lambda_data", 0.0))
+        self.use_supervision = self.lambda_data > 0.0 and self.n_supervision_points > 0
 
     def _resolve_device(self) -> torch.device:
         requested = str(self.train_cfg.get("device", "auto")).lower()
@@ -65,7 +69,13 @@ class PyTorchTrainer:
         kinetic = -(hbar**2 / (2.0 * mass)) * psi_xx
         return kinetic + potential * psi - self.model.energy * psi
 
-    def _loss_terms(self, x_collocation: torch.Tensor, x_boundary: torch.Tensor) -> dict[str, torch.Tensor]:
+    def _loss_terms(
+        self,
+        x_collocation: torch.Tensor,
+        x_boundary: torch.Tensor,
+        x_supervision: torch.Tensor | None = None,
+        psi_supervision: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
         residual = self._schrodinger_residual(x_collocation)
         loss_pde = torch.mean(residual**2)
 
@@ -87,6 +97,11 @@ class PyTorchTrainer:
         )[0]
         loss_center = torch.mean(psi_x_zero**2)
         loss_sign = torch.relu(-psi_zero).mean() ** 2
+        if x_supervision is not None and psi_supervision is not None:
+            psi_data = self.model(x_supervision).squeeze(-1)
+            loss_data = torch.mean((psi_data - psi_supervision) ** 2)
+        else:
+            loss_data = torch.zeros((), dtype=torch.float32, device=self.device)
 
         total = (
             self.train_cfg["lambda_pde"] * loss_pde
@@ -94,6 +109,7 @@ class PyTorchTrainer:
             + self.train_cfg["lambda_norm"] * loss_norm
             + self.train_cfg["lambda_center"] * loss_center
             + self.train_cfg["lambda_sign"] * loss_sign
+            + self.lambda_data * loss_data
         )
         return {
             "total": total,
@@ -102,6 +118,7 @@ class PyTorchTrainer:
             "norm": loss_norm,
             "center": loss_center,
             "sign": loss_sign,
+            "data": loss_data,
         }
 
     def train(self) -> tuple[QuantumPINN, dict[str, list[float]], dict[str, float]]:
@@ -121,8 +138,14 @@ class PyTorchTrainer:
             dtype=torch.float32,
             device=self.device,
         )
+        x_supervision = None
+        psi_supervision = None
+        if self.use_supervision:
+            x_supervision_np, psi_supervision_np = supervised_reference_data(self.problem_cfg, self.n_supervision_points)
+            x_supervision = torch.tensor(x_supervision_np, dtype=torch.float32, device=self.device).view(-1, 1)
+            psi_supervision = torch.tensor(psi_supervision_np, dtype=torch.float32, device=self.device)
 
-        history = {key: [] for key in ("total", "pde", "boundary", "norm", "center", "sign", "energy", "learning_rate")}
+        history = {key: [] for key in ("total", "pde", "boundary", "norm", "center", "sign", "data", "energy", "learning_rate")}
         best_loss = float("inf")
         best_epoch = 0
         best_state = copy.deepcopy(self.model.state_dict())
@@ -134,12 +157,12 @@ class PyTorchTrainer:
             current_lr = scheduler.current_lr
             self._set_learning_rate(current_lr)
             self.optimizer.zero_grad()
-            losses = self._loss_terms(x_collocation, x_boundary)
+            losses = self._loss_terms(x_collocation, x_boundary, x_supervision, psi_supervision)
             losses["total"].backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=float(self.train_cfg["grad_clip_norm"]))
             self.optimizer.step()
 
-            for key in ("total", "pde", "boundary", "norm", "center", "sign"):
+            for key in ("total", "pde", "boundary", "norm", "center", "sign", "data"):
                 history[key].append(float(losses[key].detach().cpu().item()))
             history["energy"].append(float(self.model.energy.detach().cpu().item()))
             history["learning_rate"].append(current_lr)

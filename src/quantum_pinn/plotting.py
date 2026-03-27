@@ -33,7 +33,7 @@ def plot_prediction(
 
 def plot_training_history(history: dict[str, list[float]], path: str | Path) -> None:
     plt.figure(figsize=(10, 5))
-    for key in ("total", "pde", "boundary", "norm", "center", "sign"):
+    for key in ("total", "pde", "boundary", "norm", "center", "sign", "data"):
         if key in history and history[key]:
             plt.plot(history[key], label=key)
     plt.yscale("log")

@@ -17,6 +17,9 @@ def main() -> None:
     parser.add_argument("--warmup", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--n-collocation", type=int, default=None)
+    parser.add_argument("--objective", choices=["physics_only", "physics_plus_data"], default=None)
+    parser.add_argument("--n-data", type=int, default=None)
+    parser.add_argument("--lambda-data", type=float, default=None)
     parser.add_argument("--frameworks", nargs="+", choices=["pytorch", "jax"], default=["pytorch", "jax"])
     args = parser.parse_args()
 
@@ -34,6 +37,12 @@ def main() -> None:
         command += ["--epochs", str(args.epochs)]
     if args.n_collocation is not None:
         command += ["--n-collocation", str(args.n_collocation)]
+    if args.objective is not None:
+        command += ["--objective", args.objective]
+    if args.n_data is not None:
+        command += ["--n-data", str(args.n_data)]
+    if args.lambda_data is not None:
+        command += ["--lambda-data", str(args.lambda_data)]
 
     raise SystemExit(subprocess.run(command, check=False).returncode)
 
