@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import copy
-import math
 import time
 
 import numpy as np
 import torch
 
 from src.quantum_pinn.pytorch.model import QuantumPINN
+from src.quantum_pinn.scheduler import build_scheduler
 
 
 class PyTorchTrainer:
@@ -47,13 +47,6 @@ class PyTorchTrainer:
         if requested == "cpu":
             return torch.device("cpu")
         raise ValueError(f"Unsupported device setting: {requested}")
-
-    def _learning_rate_at_epoch(self, epoch: int) -> float:
-        max_lr = float(self.train_cfg["learning_rate"])
-        min_lr = float(self.train_cfg["min_learning_rate"])
-        progress = min(max((epoch - 1) / max(self.train_cfg["epochs"] - 1, 1), 0.0), 1.0)
-        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
-        return min_lr + (max_lr - min_lr) * cosine
 
     def _set_learning_rate(self, value: float) -> None:
         for group in self.optimizer.param_groups:
@@ -134,10 +127,11 @@ class PyTorchTrainer:
         best_epoch = 0
         best_state = copy.deepcopy(self.model.state_dict())
         epochs_without_improvement = 0
+        scheduler = build_scheduler(self.train_cfg)
         start = time.perf_counter()
 
         for epoch in range(1, self.train_cfg["epochs"] + 1):
-            current_lr = self._learning_rate_at_epoch(epoch)
+            current_lr = scheduler.current_lr
             self._set_learning_rate(current_lr)
             self.optimizer.zero_grad()
             losses = self._loss_terms(x_collocation, x_boundary)
@@ -158,6 +152,7 @@ class PyTorchTrainer:
                 epochs_without_improvement = 0
             else:
                 epochs_without_improvement += 1
+            scheduler.step(total_loss)
 
             if epoch % self.train_cfg["log_every"] == 0:
                 print(

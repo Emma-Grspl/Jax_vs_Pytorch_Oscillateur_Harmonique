@@ -25,6 +25,12 @@ training:
   epochs: 4000
   learning_rate: 0.001
   min_learning_rate: 0.00005
+  scheduler:
+    type: "plateau"
+    factor: 0.5
+    patience: 200
+    threshold: 0.000001
+    cooldown: 0
   grad_clip_norm: 1.0
   early_stopping_patience: 800
   early_stopping_min_delta: 0.000001

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import time
 
 import jax
@@ -8,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from src.quantum_pinn.jax.model import build_activation, init_mlp, mlp_forward
+from src.quantum_pinn.scheduler import build_scheduler
 
 
 def adam_init(params):
@@ -69,13 +69,6 @@ class JAXTrainer:
             [[self.problem_cfg["domain_min"]], [self.problem_cfg["domain_max"]]],
             dtype=jnp.float32,
         )
-
-    def _learning_rate_at_epoch(self, epoch: int) -> float:
-        max_lr = float(self.train_cfg["learning_rate"])
-        min_lr = float(self.train_cfg["min_learning_rate"])
-        progress = min(max((epoch - 1) / max(self.train_cfg["epochs"] - 1, 1), 0.0), 1.0)
-        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
-        return min_lr + (max_lr - min_lr) * cosine
 
     def _psi_scalar(self, params, x_scalar: jax.Array) -> jax.Array:
         x = jnp.array([[x_scalar]], dtype=jnp.float32)
@@ -142,8 +135,9 @@ class JAXTrainer:
         best_epoch = 0
         best_params = jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), self.params)
         epochs_without_improvement = 0
+        scheduler = build_scheduler(self.train_cfg)
 
-        initial_lr = jnp.asarray(self._learning_rate_at_epoch(1), dtype=jnp.float32)
+        initial_lr = jnp.asarray(scheduler.current_lr, dtype=jnp.float32)
         compile_start = time.perf_counter()
         self.params, self.optimizer_state, terms = train_step(self.params, self.optimizer_state, initial_lr)
         compile_seconds = time.perf_counter() - compile_start
@@ -154,10 +148,11 @@ class JAXTrainer:
         best_loss = history["total"][-1]
         best_epoch = 1
         best_params = jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), self.params)
+        scheduler.step(best_loss)
 
         start = time.perf_counter()
         for epoch in range(2, self.train_cfg["epochs"] + 1):
-            current_lr = jnp.asarray(self._learning_rate_at_epoch(epoch), dtype=jnp.float32)
+            current_lr = jnp.asarray(scheduler.current_lr, dtype=jnp.float32)
             self.params, self.optimizer_state, terms = train_step(self.params, self.optimizer_state, current_lr)
             for key in ("total", "pde", "boundary", "norm", "center", "sign"):
                 history[key].append(float(terms[key]))
@@ -172,6 +167,7 @@ class JAXTrainer:
                 epochs_without_improvement = 0
             else:
                 epochs_without_improvement += 1
+            scheduler.step(total_loss)
 
             if epoch % self.train_cfg["log_every"] == 0:
                 print(
