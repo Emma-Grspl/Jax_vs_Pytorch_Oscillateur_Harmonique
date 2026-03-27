@@ -13,9 +13,9 @@ The codebase is organized to keep the benchmark reproducible, inspectable, and e
 
 We solve the stationary Schrödinger equation for the one-dimensional harmonic oscillator:
 
-\[
+$$
 \left(-\frac{\hbar^2}{2m}\frac{d^2}{dx^2} + \frac{1}{2}m\omega^2 x^2\right)\psi(x) = E \psi(x)
-\]
+$$
 
 The benchmark focuses on the ground state (`state_index = 0`) and compares how well PyTorch and JAX learn:
 
