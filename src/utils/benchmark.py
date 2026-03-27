@@ -1,3 +1,5 @@
+"""Utilities for benchmark bookkeeping, aggregation, and report generation."""
+
 from __future__ import annotations
 
 import csv
@@ -8,10 +10,12 @@ from typing import Any
 
 
 def count_pytorch_parameters(model: Any) -> int:
+    """Return the number of trainable parameters in a PyTorch model."""
     return int(sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad))
 
 
 def count_jax_parameters(params: Any) -> int:
+    """Return the number of trainable parameters in a nested JAX parameter tree."""
     leaves = []
 
     def _collect(node: Any) -> None:
@@ -31,6 +35,7 @@ def count_jax_parameters(params: Any) -> int:
 
 
 def build_run_metadata(framework: str, config: dict[str, Any]) -> dict[str, Any]:
+    """Build a flat metadata record shared by benchmark runs."""
     return {
         "framework": framework,
         "experiment_name": config["experiment"]["name"],
@@ -50,6 +55,7 @@ def build_run_metadata(framework: str, config: dict[str, Any]) -> dict[str, Any]
 
 
 def write_csv(path: str | Path, rows: list[dict[str, Any]]) -> None:
+    """Write a list of dictionaries to a CSV file."""
     if not rows:
         return
     fieldnames = list(rows[0].keys())
@@ -60,6 +66,7 @@ def write_csv(path: str | Path, rows: list[dict[str, Any]]) -> None:
 
 
 def summarize_runs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Aggregate repeated benchmark runs into per-framework summary statistics."""
     if not rows:
         return []
 
@@ -101,6 +108,7 @@ def summarize_runs(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def write_markdown_report(path: str | Path, rows: list[dict[str, Any]], summary_rows: list[dict[str, Any]]) -> None:
+    """Write a human-readable Markdown benchmark report."""
     lines = [
         "# Benchmark Report",
         "",

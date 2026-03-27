@@ -1,3 +1,5 @@
+"""Shared learning-rate scheduler logic used by both frameworks."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,6 +7,8 @@ from dataclasses import dataclass
 
 @dataclass
 class PlateauScheduler:
+    """Minimal reduce-on-plateau scheduler shared by PyTorch and JAX trainers."""
+
     current_lr: float
     min_lr: float
     factor: float
@@ -16,6 +20,7 @@ class PlateauScheduler:
     cooldown_counter: int = 0
 
     def step(self, metric: float) -> float:
+        """Update the scheduler state from the latest loss value."""
         improved = metric < self.best_value - self.threshold
         if improved:
             self.best_value = metric
@@ -39,6 +44,7 @@ class PlateauScheduler:
 
 
 def build_scheduler(training_cfg: dict) -> PlateauScheduler:
+    """Instantiate the scheduler from the training configuration."""
     scheduler_cfg = training_cfg.get("scheduler", {})
     scheduler_type = str(scheduler_cfg.get("type", "plateau")).lower()
     if scheduler_type != "plateau":

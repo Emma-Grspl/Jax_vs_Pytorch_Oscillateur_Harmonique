@@ -1,3 +1,5 @@
+"""PyTorch training loop for the quantum harmonic oscillator PINN benchmark."""
+
 from __future__ import annotations
 
 import copy
@@ -6,13 +8,17 @@ import time
 import numpy as np
 import torch
 
-from src.quantum_pinn.pytorch.model import QuantumPINN
-from src.quantum_pinn.problem import supervised_reference_data
-from src.quantum_pinn.scheduler import build_scheduler
+from src.data.problem import supervised_reference_data
+from src.models.pytorch_model import QuantumPINN
+from src.physics.schrodinger import torch_schrodinger_residual
+from src.training.scheduler import build_scheduler
 
 
 class PyTorchTrainer:
+    """Train and evaluate the PyTorch PINN under shared benchmark settings."""
+
     def __init__(self, config: dict) -> None:
+        """Store configuration, build the model, and initialize the optimizer."""
         self.config = config
         self.problem_cfg = config["problem"]
         self.train_cfg = config["training"]
@@ -33,6 +39,7 @@ class PyTorchTrainer:
         self.use_supervision = self.lambda_data > 0.0 and self.n_supervision_points > 0
 
     def _resolve_device(self) -> torch.device:
+        """Resolve the requested compute device from the training configuration."""
         requested = str(self.train_cfg.get("device", "auto")).lower()
         if requested == "auto":
             if torch.cuda.is_available():
@@ -53,21 +60,9 @@ class PyTorchTrainer:
         raise ValueError(f"Unsupported device setting: {requested}")
 
     def _set_learning_rate(self, value: float) -> None:
+        """Apply the current learning rate to all optimizer parameter groups."""
         for group in self.optimizer.param_groups:
             group["lr"] = value
-
-    def _schrodinger_residual(self, x: torch.Tensor) -> torch.Tensor:
-        x = x.clone().detach().requires_grad_(True)
-        psi = self.model(x)
-        psi_x = torch.autograd.grad(psi, x, torch.ones_like(psi), create_graph=True)[0]
-        psi_xx = torch.autograd.grad(psi_x, x, torch.ones_like(psi_x), create_graph=True)[0]
-
-        mass = self.problem_cfg["mass"]
-        omega = self.problem_cfg["omega"]
-        hbar = self.problem_cfg["hbar"]
-        potential = 0.5 * mass * (omega**2) * x**2
-        kinetic = -(hbar**2 / (2.0 * mass)) * psi_xx
-        return kinetic + potential * psi - self.model.energy * psi
 
     def _loss_terms(
         self,
@@ -76,7 +71,14 @@ class PyTorchTrainer:
         x_supervision: torch.Tensor | None = None,
         psi_supervision: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        residual = self._schrodinger_residual(x_collocation)
+        """Compute all loss terms used by the PyTorch training objective."""
+        residual = torch_schrodinger_residual(
+            model=self.model,
+            x=x_collocation,
+            mass=self.problem_cfg["mass"],
+            omega=self.problem_cfg["omega"],
+            hbar=self.problem_cfg["hbar"],
+        )
         loss_pde = torch.mean(residual**2)
 
         psi_boundary = self.model(x_boundary)
@@ -122,6 +124,7 @@ class PyTorchTrainer:
         }
 
     def train(self) -> tuple[QuantumPINN, dict[str, list[float]], dict[str, float]]:
+        """Run training, restore the best checkpoint, and return logs and timing."""
         domain_min = self.problem_cfg["domain_min"]
         domain_max = self.problem_cfg["domain_max"]
         n_collocation = self.problem_cfg["n_collocation"]
@@ -201,6 +204,7 @@ class PyTorchTrainer:
         return self.model, history, timing
 
     def predict(self, x: np.ndarray) -> np.ndarray:
+        """Run inference on a NumPy grid and return a NumPy prediction."""
         self.model.eval()
         tensor_x = torch.tensor(x.reshape(-1, 1), dtype=torch.float32, device=self.device)
         with torch.no_grad():

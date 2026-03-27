@@ -1,13 +1,18 @@
+"""Generate per-experiment plots from saved benchmark artifacts."""
+
 from __future__ import annotations
 
 import argparse
 import csv
 import json
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-cache_dir = ROOT / ".matplotlib"
+sys.path.append(str(ROOT))
+cache_dir = Path(tempfile.gettempdir()) / "qho_pinn_matplotlib"
 cache_dir.mkdir(exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(cache_dir.resolve()))
 
@@ -15,13 +20,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from src.data.problem import supervised_reference_data
+
 
 def load_csv_rows(path: Path) -> list[dict[str, str]]:
+    """Load a CSV file into a list of row dictionaries."""
     with path.open("r", encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle))
 
 
 def discover_latest_run(base_dir: Path) -> Path:
+    """Find the latest complete HPC run directory under the benchmark results root."""
     candidates = []
     for path in base_dir.glob("hpc_jz_*"):
         summary = path / "benchmark_summary.csv"
@@ -39,6 +48,7 @@ def discover_latest_run(base_dir: Path) -> Path:
 
 
 def parse_numeric_rows(rows: list[dict[str, str]]) -> list[dict[str, float | int | str]]:
+    """Convert CSV string values to numeric Python types when possible."""
     parsed = []
     for row in rows:
         parsed_row: dict[str, float | int | str] = {}
@@ -61,15 +71,18 @@ def parse_numeric_rows(rows: list[dict[str, str]]) -> list[dict[str, float | int
 
 
 def best_run(rows: list[dict[str, float | int | str]]) -> dict[str, float | int | str]:
+    """Select the best run according to relative L2 error."""
     return min(rows, key=lambda row: float(row["relative_l2_error"]))
 
 
 def load_json(path: Path) -> dict:
+    """Load a JSON file from disk."""
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
 
 def load_weight_values(framework: str, run_dir: Path) -> np.ndarray:
+    """Load and flatten the saved weights for the selected framework and run."""
     if framework == "pytorch":
         state_dict = torch.load(run_dir / "model.pt", map_location="cpu")
         leaves = [tensor.detach().cpu().numpy().ravel() for tensor in state_dict.values()]
@@ -80,7 +93,26 @@ def load_weight_values(framework: str, run_dir: Path) -> np.ndarray:
     return np.concatenate(leaves)
 
 
-def plot_summary(summary_rows: list[dict[str, float | int | str]], output_dir: Path) -> None:
+def objective_label(run_rows: list[dict[str, float | int | str]]) -> str:
+    """Build a directory-friendly label for the current training regime."""
+    objective = str(run_rows[0].get("objective", "physics_only"))
+    n_data = int(run_rows[0].get("n_supervision_points", 0))
+    if objective == "physics_plus_data":
+        return f"physics_plus_data_{n_data}"
+    return objective
+
+
+def display_title(run_rows: list[dict[str, float | int | str]]) -> str:
+    """Build a plot title for the current training regime."""
+    objective = str(run_rows[0].get("objective", "physics_only"))
+    n_data = int(run_rows[0].get("n_supervision_points", 0))
+    if objective == "physics_plus_data":
+        return f"Physics + Data Benchmark (n={n_data})"
+    return "Physics-Only Benchmark"
+
+
+def plot_summary(summary_rows: list[dict[str, float | int | str]], output_dir: Path, title: str) -> None:
+    """Plot summary bars for runtime and accuracy metrics."""
     frameworks = [str(row["framework"]) for row in summary_rows]
     total_times = [float(row["training_seconds_mean"]) for row in summary_rows]
     l2_values = [float(row["relative_l2_error_mean"]) for row in summary_rows]
@@ -98,12 +130,13 @@ def plot_summary(summary_rows: list[dict[str, float | int | str]], output_dir: P
         for bar, value in zip(bars, values):
             ax.text(bar.get_x() + bar.get_width() / 2.0, bar.get_height(), f"{value:.3e}" if value < 0.1 else f"{value:.3f}", ha="center", va="bottom", fontsize=9)
 
-    fig.suptitle("Physics-Only Benchmark Summary", fontsize=14, fontweight="bold")
+    fig.suptitle(f"{title} Summary", fontsize=14, fontweight="bold")
     fig.savefig(output_dir / "1_summary_metrics.png", dpi=250)
     plt.close(fig)
 
 
 def plot_run_metrics(run_rows: dict[str, list[dict[str, float | int | str]]], output_dir: Path) -> None:
+    """Plot run-by-run L2 and energy errors for both frameworks."""
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), constrained_layout=True)
     colors = {"pytorch": "#1f77b4", "jax": "#e24a33"}
 
@@ -127,6 +160,7 @@ def plot_run_metrics(run_rows: dict[str, list[dict[str, float | int | str]]], ou
 
 
 def plot_histories(best_runs: dict[str, dict[str, float | int | str]], run_root: Path, output_dir: Path) -> None:
+    """Plot the loss and energy trajectories of the best run in each framework."""
     fig, axes = plt.subplots(2, 1, figsize=(11, 8), sharex=True, constrained_layout=True)
     colors = {"pytorch": "#1f77b4", "jax": "#e24a33"}
 
@@ -152,6 +186,7 @@ def plot_histories(best_runs: dict[str, dict[str, float | int | str]], run_root:
 
 
 def plot_reconstruction(best_runs: dict[str, dict[str, float | int | str]], run_root: Path, output_dir: Path) -> None:
+    """Plot best-run reconstructions and absolute errors for both frameworks."""
     fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
     colors = {"pytorch": "#1f77b4", "jax": "#e24a33"}
 
@@ -186,6 +221,7 @@ def plot_reconstruction(best_runs: dict[str, dict[str, float | int | str]], run_
 
 
 def plot_error_heatmap(run_rows: dict[str, list[dict[str, float | int | str]]], run_root: Path, output_dir: Path) -> None:
+    """Plot a heatmap of absolute errors across runs and spatial coordinates."""
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), constrained_layout=True)
 
     for ax, framework in zip(axes, ("pytorch", "jax")):
@@ -209,6 +245,7 @@ def plot_error_heatmap(run_rows: dict[str, list[dict[str, float | int | str]]], 
 
 
 def plot_weight_histograms(best_runs: dict[str, dict[str, float | int | str]], run_root: Path, output_dir: Path) -> None:
+    """Plot weight histograms for the best PyTorch and JAX checkpoints."""
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), constrained_layout=True)
     colors = {"pytorch": "#1f77b4", "jax": "#e24a33"}
 
@@ -226,7 +263,48 @@ def plot_weight_histograms(best_runs: dict[str, dict[str, float | int | str]], r
     plt.close(fig)
 
 
+def plot_snapshot_overlay(best_runs: dict[str, dict[str, float | int | str]], run_root: Path, output_dir: Path, title: str) -> None:
+    """Plot the analytical solution, data points, and best learned curves on one axis."""
+    colors = {"pytorch": "#1f77b4", "jax": "#e24a33"}
+    fig, ax = plt.subplots(figsize=(9, 5.2), constrained_layout=True)
+
+    reference_x = None
+    reference_psi = None
+    best_predictions: dict[str, np.ndarray] = {}
+    supervision_x = None
+    supervision_psi = None
+    for framework, row in best_runs.items():
+        run_dir = run_root / framework / f"run_{int(row['run_index']):02d}_seed_{int(row['seed'])}"
+        predictions = np.load(run_dir / "predictions.npz")
+        reference_x = predictions["x_eval"]
+        reference_psi = predictions["psi_exact"]
+        best_predictions[framework] = predictions["psi_pred"]
+        if supervision_x is None:
+            config = load_json(run_dir / "config.json")
+            n_points = int(config["training"].get("n_supervision_points", 0))
+            if n_points > 0:
+                supervision_x, supervision_psi = supervised_reference_data(config["problem"], n_points)
+
+    ax.plot(reference_x, reference_psi, color="black", linestyle="--", linewidth=2.2, label="Analytical")
+    if supervision_x is not None and supervision_psi is not None:
+        ax.scatter(supervision_x, supervision_psi, s=28, color="#ff4d4d", alpha=0.6, label="Supervision data")
+    for framework in ("pytorch", "jax"):
+        psi_pred = best_predictions[framework]
+        label = f"{framework} (L2={float(best_runs[framework]['relative_l2_error']):.3e})"
+        ax.plot(reference_x, psi_pred, color=colors[framework], linewidth=2, label=label)
+
+    ax.set_title("Best Snapshot With Data")
+    ax.set_xlabel("x")
+    ax.set_ylabel("psi(x)")
+    ax.grid(True, alpha=0.25)
+    ax.legend()
+    fig.suptitle(f"{title} Snapshot", fontsize=14, fontweight="bold")
+    fig.savefig(output_dir / "7_snapshot_overlay.png", dpi=250)
+    plt.close(fig)
+
+
 def write_manifest(run_dir: Path, best_runs: dict[str, dict[str, float | int | str]], output_dir: Path) -> None:
+    """Write a small manifest describing the plotted source runs."""
     payload = {
         "source_run_dir": str(run_dir),
         "selected_best_runs": {
@@ -244,6 +322,7 @@ def write_manifest(run_dir: Path, best_runs: dict[str, dict[str, float | int | s
 
 
 def main() -> None:
+    """Generate the full per-experiment figure set for one saved benchmark run."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--run-dir",
@@ -253,29 +332,36 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    results_base = ROOT / "results" / "quantum_oscillator" / "quantum_oscillator"
+    results_base = ROOT / "outputs" / "quantum_oscillator" / "artifacts"
+    legacy_base = results_base / "quantum_oscillator"
+    if legacy_base.exists():
+        results_base = legacy_base
     run_dir = args.run_dir if args.run_dir is not None else discover_latest_run(results_base)
-    output_dir = ROOT / "outputs" / "quantum_oscillator" / "physics_only_plots" / run_dir.name
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     summary_rows = parse_numeric_rows(load_csv_rows(run_dir / "benchmark_summary.csv"))
     pytorch_rows = parse_numeric_rows(load_csv_rows(run_dir / "pytorch" / "benchmark_runs.csv"))
     jax_rows = parse_numeric_rows(load_csv_rows(run_dir / "jax" / "benchmark_runs.csv"))
+    figure_dir = ROOT / "results" / "quantum_oscillator" / "benchmark_plots" / objective_label(pytorch_rows) / run_dir.name
+    analysis_dir = ROOT / "outputs" / "quantum_oscillator" / "analysis" / "benchmark_plots" / objective_label(pytorch_rows) / run_dir.name
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    analysis_dir.mkdir(parents=True, exist_ok=True)
     run_rows = {"pytorch": pytorch_rows, "jax": jax_rows}
     best_runs = {
         "pytorch": best_run(pytorch_rows),
         "jax": best_run(jax_rows),
     }
+    title = display_title(pytorch_rows)
 
-    plot_summary(summary_rows, output_dir)
-    plot_run_metrics(run_rows, output_dir)
-    plot_histories(best_runs, run_dir, output_dir)
-    plot_reconstruction(best_runs, run_dir, output_dir)
-    plot_error_heatmap(run_rows, run_dir, output_dir)
-    plot_weight_histograms(best_runs, run_dir, output_dir)
-    write_manifest(run_dir, best_runs, output_dir)
+    plot_summary(summary_rows, figure_dir, title)
+    plot_run_metrics(run_rows, figure_dir)
+    plot_histories(best_runs, run_dir, figure_dir)
+    plot_reconstruction(best_runs, run_dir, figure_dir)
+    plot_error_heatmap(run_rows, run_dir, figure_dir)
+    plot_weight_histograms(best_runs, run_dir, figure_dir)
+    plot_snapshot_overlay(best_runs, run_dir, figure_dir, title)
+    write_manifest(run_dir, best_runs, analysis_dir)
 
-    print(f"Plots written to: {output_dir}")
+    print(f"Figures written to: {figure_dir}")
+    print(f"Analysis manifest written to: {analysis_dir}")
 
 
 if __name__ == "__main__":

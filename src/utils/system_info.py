@@ -1,3 +1,5 @@
+"""Runtime environment inspection helpers for benchmark metadata."""
+
 from __future__ import annotations
 
 import os
@@ -8,6 +10,7 @@ from typing import Any
 
 
 def _run_command(command: list[str]) -> str | None:
+    """Run a shell command and return its output when available."""
     try:
         completed = subprocess.run(
             command,
@@ -23,6 +26,7 @@ def _run_command(command: list[str]) -> str | None:
 
 
 def get_system_info() -> dict[str, Any]:
+    """Collect hardware and software metadata for a benchmark run."""
     info: dict[str, Any] = {
         "hostname": socket.gethostname(),
         "platform": platform.platform(),

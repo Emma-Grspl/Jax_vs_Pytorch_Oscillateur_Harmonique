@@ -1,8 +1,9 @@
 experiment:
   name: "quantum_harmonic_oscillator_ground_state"
   seed: 42
-  output_dir: "outputs/quantum_oscillator"
-  results_dir: "results/quantum_oscillator"
+  artifact_dir: "outputs/quantum_oscillator/artifacts"
+  analysis_dir: "outputs/quantum_oscillator/analysis"
+  figure_dir: "results/quantum_oscillator"
   run_tag: "default"
 
 problem:

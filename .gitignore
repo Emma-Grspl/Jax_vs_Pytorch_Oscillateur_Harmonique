@@ -2,8 +2,10 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .pytest_cache/
+.matplotlib/
+*.DS_Store
 
 project1/
+.venv/
 outputs/
 results/
-

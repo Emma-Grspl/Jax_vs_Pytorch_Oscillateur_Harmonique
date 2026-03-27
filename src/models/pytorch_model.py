@@ -1,3 +1,5 @@
+"""PyTorch model definition for the quantum harmonic oscillator PINN."""
+
 from __future__ import annotations
 
 import torch
@@ -5,6 +7,7 @@ from torch import nn
 
 
 def build_activation(name: str) -> nn.Module:
+    """Create a PyTorch activation module from its configuration name."""
     activations = {
         "tanh": nn.Tanh,
         "silu": nn.SiLU,
@@ -17,7 +20,10 @@ def build_activation(name: str) -> nn.Module:
 
 
 class QuantumPINN(nn.Module):
+    """Feed-forward PINN with a jointly optimized scalar energy parameter."""
+
     def __init__(self, hidden_layers: list[int], activation: str, energy_init: float) -> None:
+        """Initialize the network layers and the trainable energy parameter."""
         super().__init__()
         layers: list[nn.Module] = []
         in_features = 1
@@ -34,10 +40,11 @@ class QuantumPINN(nn.Module):
 
     @staticmethod
     def _init_weights(module: nn.Module) -> None:
+        """Apply Xavier initialization to linear layers."""
         if isinstance(module, nn.Linear):
             nn.init.xavier_uniform_(module.weight)
             nn.init.zeros_(module.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Evaluate the network wavefunction on the input coordinates."""
         return self.network(x)
-

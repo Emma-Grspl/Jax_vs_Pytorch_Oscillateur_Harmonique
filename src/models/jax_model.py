@@ -1,3 +1,5 @@
+"""JAX model definition for the quantum harmonic oscillator PINN."""
+
 from __future__ import annotations
 
 from typing import Callable
@@ -7,6 +9,7 @@ import jax.numpy as jnp
 
 
 def build_activation(name: str) -> Callable[[jnp.ndarray], jnp.ndarray]:
+    """Return the configured JAX activation function."""
     activations = {
         "tanh": jnp.tanh,
         "silu": jax.nn.silu,
@@ -19,6 +22,7 @@ def build_activation(name: str) -> Callable[[jnp.ndarray], jnp.ndarray]:
 
 
 def init_mlp(layer_sizes: list[int], key: jax.Array) -> list[dict[str, jax.Array]]:
+    """Initialize an MLP parameter tree with Xavier-style uniform weights."""
     params = []
     keys = jax.random.split(key, len(layer_sizes) - 1)
     for in_dim, out_dim, layer_key in zip(layer_sizes[:-1], layer_sizes[1:], keys):
@@ -40,9 +44,9 @@ def mlp_forward(
     x: jax.Array,
     activation: Callable[[jnp.ndarray], jnp.ndarray],
 ) -> jax.Array:
+    """Run a forward pass through the MLP parameter tree."""
     h = x
     for layer in params[:-1]:
         h = activation(h @ layer["w"] + layer["b"])
     output_layer = params[-1]
     return h @ output_layer["w"] + output_layer["b"]
-

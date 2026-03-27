@@ -1,3 +1,5 @@
+"""JAX training loop for the quantum harmonic oscillator PINN benchmark."""
+
 from __future__ import annotations
 
 import time
@@ -6,17 +8,20 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from src.quantum_pinn.jax.model import build_activation, init_mlp, mlp_forward
-from src.quantum_pinn.problem import supervised_reference_data
-from src.quantum_pinn.scheduler import build_scheduler
+from src.data.problem import supervised_reference_data
+from src.models.jax_model import build_activation, init_mlp, mlp_forward
+from src.physics.schrodinger import jax_scalar_wavefunction, jax_schrodinger_residual, jax_trapezoidal_integral
+from src.training.scheduler import build_scheduler
 
 
 def adam_init(params):
+    """Initialize Adam optimizer state for a nested JAX parameter tree."""
     zeros_like = jax.tree_util.tree_map(jnp.zeros_like, params)
     return {"step": jnp.array(0), "m": zeros_like, "v": zeros_like}
 
 
 def adam_update(params, grads, state, learning_rate: float, beta1: float = 0.9, beta2: float = 0.999, eps: float = 1e-8):
+    """Apply one Adam update step to a nested JAX parameter tree."""
     step = state["step"] + 1
     m = jax.tree_util.tree_map(lambda m_prev, g: beta1 * m_prev + (1.0 - beta1) * g, state["m"], grads)
     v = jax.tree_util.tree_map(lambda v_prev, g: beta2 * v_prev + (1.0 - beta2) * (g**2), state["v"], grads)
@@ -32,6 +37,7 @@ def adam_update(params, grads, state, learning_rate: float, beta1: float = 0.9, 
 
 
 def global_grad_clip(grads, max_norm: float):
+    """Clip gradients by global norm and return the clipped tree and norm."""
     squared_norms = [jnp.sum(leaf**2) for leaf in jax.tree_util.tree_leaves(grads)]
     global_norm = jnp.sqrt(jnp.sum(jnp.stack(squared_norms)))
     scale = jnp.minimum(1.0, max_norm / (global_norm + 1e-12))
@@ -39,13 +45,11 @@ def global_grad_clip(grads, max_norm: float):
     return clipped, global_norm
 
 
-def trapezoidal_integral(y: jax.Array, x: jax.Array) -> jax.Array:
-    dx = x[1:] - x[:-1]
-    return jnp.sum(0.5 * (y[1:] + y[:-1]) * dx)
-
-
 class JAXTrainer:
+    """Train and evaluate the JAX PINN under shared benchmark settings."""
+
     def __init__(self, config: dict) -> None:
+        """Store configuration, initialize parameters, and build training grids."""
         self.config = config
         self.problem_cfg = config["problem"]
         self.train_cfg = config["training"]
@@ -81,29 +85,26 @@ class JAXTrainer:
             self.x_supervision = None
             self.psi_supervision = None
 
-    def _psi_scalar(self, params, x_scalar: jax.Array) -> jax.Array:
-        x = jnp.array([[x_scalar]], dtype=jnp.float32)
-        return mlp_forward(params["network"], x, self.activation).squeeze()
-
     def _loss_terms(self, params):
-        mass = self.problem_cfg["mass"]
-        omega = self.problem_cfg["omega"]
-        hbar = self.problem_cfg["hbar"]
-
-        psi_values = mlp_forward(params["network"], self.x_collocation, self.activation).squeeze(-1)
-        d2psi = jax.vmap(jax.grad(jax.grad(lambda x_scalar: self._psi_scalar(params, x_scalar))))(self.x_collocation.squeeze(-1))
-        potential = 0.5 * mass * (omega**2) * self.x_collocation.squeeze(-1) ** 2
-        residual = -(hbar**2 / (2.0 * mass)) * d2psi + potential * psi_values - params["energy"] * psi_values
+        """Compute all loss terms used by the JAX training objective."""
+        psi_values, residual = jax_schrodinger_residual(
+            params=params,
+            x_collocation=self.x_collocation,
+            mass=self.problem_cfg["mass"],
+            omega=self.problem_cfg["omega"],
+            hbar=self.problem_cfg["hbar"],
+            activation=self.activation,
+        )
         loss_pde = jnp.mean(residual**2)
 
         psi_boundary = mlp_forward(params["network"], self.x_boundary, self.activation)
         loss_boundary = jnp.mean(psi_boundary**2)
 
-        norm = trapezoidal_integral(psi_values**2, self.x_collocation.squeeze(-1))
+        norm = jax_trapezoidal_integral(psi_values**2, self.x_collocation.squeeze(-1))
         loss_norm = (norm - 1.0) ** 2
 
-        psi_zero = self._psi_scalar(params, jnp.array(0.0, dtype=jnp.float32))
-        psi_x_zero = jax.grad(lambda x_scalar: self._psi_scalar(params, x_scalar))(jnp.array(0.0, dtype=jnp.float32))
+        psi_zero = jax_scalar_wavefunction(params, jnp.array(0.0, dtype=jnp.float32), self.activation)
+        psi_x_zero = jax.grad(lambda x_scalar: jax_scalar_wavefunction(params, x_scalar, self.activation))(jnp.array(0.0, dtype=jnp.float32))
         loss_center = psi_x_zero**2
         loss_sign = jax.nn.relu(-psi_zero) ** 2
         if self.use_supervision:
@@ -131,6 +132,7 @@ class JAXTrainer:
         }
 
     def train(self):
+        """Run training, keep the best parameter tree, and return logs and timing."""
         history = {key: [] for key in ("total", "pde", "boundary", "norm", "center", "sign", "data", "energy", "learning_rate")}
 
         @jax.jit
@@ -211,6 +213,7 @@ class JAXTrainer:
         return self.params, history, timing
 
     def predict(self, x: np.ndarray) -> np.ndarray:
+        """Run inference on a NumPy grid and return a NumPy prediction."""
         values = mlp_forward(
             self.params["network"],
             jnp.asarray(x.reshape(-1, 1), dtype=jnp.float32),

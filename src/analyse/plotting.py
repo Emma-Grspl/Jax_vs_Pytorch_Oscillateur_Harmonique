@@ -1,9 +1,12 @@
+"""Plotting helpers for single-run predictions and loss histories."""
+
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
-cache_dir = Path(".matplotlib")
+cache_dir = Path(tempfile.gettempdir()) / "qho_pinn_matplotlib"
 cache_dir.mkdir(exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(cache_dir.resolve()))
 
@@ -18,6 +21,7 @@ def plot_prediction(
     path: str | Path,
     title: str,
 ) -> None:
+    """Plot the analytical wavefunction and a single learned prediction."""
     plt.figure(figsize=(10, 5))
     plt.plot(x, reference, label="Analytical", color="black", linestyle="--")
     plt.plot(x, prediction, label="PINN", color="tab:blue", linewidth=2)
@@ -32,6 +36,7 @@ def plot_prediction(
 
 
 def plot_training_history(history: dict[str, list[float]], path: str | Path) -> None:
+    """Plot the tracked loss terms over training epochs."""
     plt.figure(figsize=(10, 5))
     for key in ("total", "pde", "boundary", "norm", "center", "sign", "data"):
         if key in history and history[key]:

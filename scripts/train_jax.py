@@ -1,3 +1,5 @@
+"""Train a single JAX model and export the corresponding artifacts."""
+
 from __future__ import annotations
 
 import sys
@@ -8,33 +10,34 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from src.quantum_pinn.config import load_config, resolve_framework_config
-from src.quantum_pinn.io import ensure_dir, write_json
-from src.quantum_pinn.runner import run_jax_once
+from src.analyse.plotting import plot_prediction, plot_training_history
+from src.data.problem import reference_solution
+from src.models.jax_model import build_activation, mlp_forward
+from src.training.runner import run_jax_once
+from src.utils.config import load_config, resolve_framework_config
+from src.utils.io import ensure_dir, write_json
+from src.utils.metrics import align_sign
 
 
 def main() -> None:
+    """Run one JAX training job with plots and metrics export."""
     try:
-        from src.quantum_pinn.jax.trainer import JAXTrainer
+        from src.training.jax_trainer import JAXTrainer
     except ModuleNotFoundError as exc:
         raise SystemExit(
             "JAX is not installed in the current environment. "
             "Install `jax` before running `scripts/train_jax.py`."
         ) from exc
-    from src.quantum_pinn.plotting import plot_prediction, plot_training_history
 
     config_path = ROOT / "config" / "quantum_oscillator.yaml"
     config = resolve_framework_config(load_config(config_path), "jax")
 
-    output_dir = ensure_dir(ROOT / config["experiment"]["output_dir"] / "jax")
-    results_dir = ensure_dir(ROOT / config["experiment"]["results_dir"] / "jax")
+    figure_dir = ensure_dir(ROOT / config["experiment"]["figure_dir"] / "single_runs" / "jax")
+    artifact_dir = ensure_dir(ROOT / config["experiment"]["artifact_dir"] / "single_runs" / "jax")
 
     metrics, history, params = run_jax_once(config, int(config["experiment"]["seed"]))
 
-    write_json(results_dir / "metrics.json", metrics)
-    from src.quantum_pinn.problem import reference_solution
-    from src.quantum_pinn.metrics import align_sign
-    from src.quantum_pinn.jax.model import build_activation, mlp_forward
+    write_json(artifact_dir / "metrics.json", metrics)
     import jax.numpy as jnp
 
     x_eval, psi_exact, _ = reference_solution(config["problem"])
@@ -49,10 +52,10 @@ def main() -> None:
         x=x_eval,
         reference=psi_exact,
         prediction=psi_pred,
-        path=output_dir / "prediction.png",
+        path=figure_dir / "prediction.png",
         title="Quantum Harmonic Oscillator Ground State - JAX PINN",
     )
-    plot_training_history(history, output_dir / "losses.png")
+    plot_training_history(history, figure_dir / "losses.png")
 
     print("JAX training completed.")
     print(metrics)

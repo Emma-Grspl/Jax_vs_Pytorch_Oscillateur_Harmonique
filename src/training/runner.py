@@ -1,3 +1,5 @@
+"""Shared helpers for executing one benchmark run in each framework."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -5,13 +7,14 @@ from typing import Any
 import numpy as np
 import torch
 
-from src.quantum_pinn.benchmark import build_run_metadata, count_jax_parameters, count_pytorch_parameters
-from src.quantum_pinn.metrics import absolute_energy_error, align_sign, relative_l2_error
-from src.quantum_pinn.problem import reference_solution
-from src.quantum_pinn.pytorch.trainer import PyTorchTrainer
+from src.data.problem import reference_solution
+from src.training.pytorch_trainer import PyTorchTrainer
+from src.utils.benchmark import build_run_metadata, count_jax_parameters, count_pytorch_parameters
+from src.utils.metrics import absolute_energy_error, align_sign, relative_l2_error
 
 
 def run_pytorch_once(config: dict[str, Any], seed: int) -> tuple[dict[str, Any], dict[str, list[float]], Any]:
+    """Execute one PyTorch run and return metrics, history, and the trained model."""
     np.random.seed(seed)
     torch.manual_seed(seed)
 
@@ -48,7 +51,8 @@ def run_pytorch_once(config: dict[str, Any], seed: int) -> tuple[dict[str, Any],
 
 
 def run_jax_once(config: dict[str, Any], seed: int) -> tuple[dict[str, Any], dict[str, list[float]], Any]:
-    from src.quantum_pinn.jax.trainer import JAXTrainer
+    """Execute one JAX run and return metrics, history, and the trained parameters."""
+    from src.training.jax_trainer import JAXTrainer
 
     run_config = dict(config)
     run_config["experiment"] = dict(config["experiment"])

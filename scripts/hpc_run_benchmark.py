@@ -1,3 +1,5 @@
+"""Forward benchmark CLI arguments from an HPC job to the main benchmark runner."""
+
 from __future__ import annotations
 
 import argparse
@@ -10,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
+    """Parse HPC wrapper arguments and launch the benchmark subprocess."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", choices=["cpu", "cuda", "auto"], default="auto")
     parser.add_argument("--tag", default=None)

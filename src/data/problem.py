@@ -1,3 +1,5 @@
+"""Analytical definitions for the quantum harmonic oscillator benchmark."""
+
 from __future__ import annotations
 
 import math
@@ -7,14 +9,17 @@ import numpy as np
 
 
 def create_grid(domain_min: float, domain_max: float, n_points: int) -> np.ndarray:
+    """Create a one-dimensional evaluation grid over the spatial domain."""
     return np.linspace(domain_min, domain_max, n_points, dtype=np.float32)
 
 
 def potential(x: np.ndarray, mass: float, omega: float) -> np.ndarray:
+    """Compute the harmonic oscillator potential."""
     return 0.5 * mass * (omega**2) * x**2
 
 
 def hermite_polynomial(n: int, x: np.ndarray) -> np.ndarray:
+    """Evaluate the nth Hermite polynomial on the input grid."""
     if n == 0:
         return np.ones_like(x)
     if n == 1:
@@ -29,6 +34,7 @@ def hermite_polynomial(n: int, x: np.ndarray) -> np.ndarray:
 
 
 def analytical_energy(state_index: int, hbar: float, omega: float) -> float:
+    """Return the exact energy level for the chosen eigenstate."""
     return hbar * omega * (state_index + 0.5)
 
 
@@ -39,6 +45,7 @@ def analytical_wavefunction(
     omega: float,
     hbar: float,
 ) -> np.ndarray:
+    """Return the analytical harmonic-oscillator eigenfunction on the given grid."""
     xi = np.sqrt(mass * omega / hbar) * x
     prefactor = (mass * omega / (np.pi * hbar)) ** 0.25
     normalization = prefactor / np.sqrt((2.0**state_index) * math.factorial(state_index))
@@ -50,6 +57,7 @@ def analytical_wavefunction(
 
 
 def reference_solution(problem_cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, float]:
+    """Build the analytical evaluation grid, wavefunction, and energy."""
     x = create_grid(
         problem_cfg["domain_min"],
         problem_cfg["domain_max"],
@@ -71,6 +79,7 @@ def reference_solution(problem_cfg: dict[str, Any]) -> tuple[np.ndarray, np.ndar
 
 
 def supervised_reference_data(problem_cfg: dict[str, Any], n_points: int) -> tuple[np.ndarray, np.ndarray]:
+    """Sample analytical supervision data for the mixed physics-and-data objective."""
     x = create_grid(
         problem_cfg["domain_min"],
         problem_cfg["domain_max"],

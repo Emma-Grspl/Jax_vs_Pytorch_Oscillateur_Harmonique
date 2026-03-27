@@ -23,8 +23,8 @@ echo "Job on ${SLURMD_NODENAME:-unknown-node}"
 date
 nvidia-smi
 
-# Active un environnement JAX additionnel seulement si tu le fournis explicitement.
-# Exemple:
+# Activate an additional JAX environment only if you provide it explicitly.
+# Example:
 # export JAX_ENV_PATH=/lustre/fswork/projects/rech/fdb/usv13rn/venvs/jax_pinn_gpu311
 # sbatch launch/jz_submit.slurm
 if [ -n "${JAX_ENV_PATH:-}" ]; then
@@ -35,11 +35,11 @@ export PYTHONUNBUFFERED=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-10}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-10}"
 
-# Adapte PROJECT_DIR si le repo est clone ailleurs.
+# Override PROJECT_DIR if the repository is cloned elsewhere.
 PROJECT_DIR="${PROJECT_DIR:-$PWD}"
 cd "$PROJECT_DIR"
 
-# Run tag dedie au job Slurm pour separer clairement les sorties HPC.
+# Use a Slurm-specific run tag to keep HPC outputs separate.
 RUN_TAG="jz_${SLURM_JOB_ID:-manual}"
 
 if [ -x "./project1/bin/python" ]; then

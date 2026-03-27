@@ -1,3 +1,5 @@
+"""Grid-search a small set of framework-specific training overrides."""
+
 from __future__ import annotations
 
 import copy
@@ -8,13 +10,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from src.quantum_pinn.benchmark import summarize_runs, write_csv, write_markdown_report
-from src.quantum_pinn.config import load_config, resolve_framework_config, deep_update
-from src.quantum_pinn.io import ensure_dir, write_json
-from src.quantum_pinn.runner import run_jax_once, run_pytorch_once
+from src.training.runner import run_jax_once, run_pytorch_once
+from src.utils.benchmark import summarize_runs, write_csv
+from src.utils.config import deep_update, load_config, resolve_framework_config
+from src.utils.io import ensure_dir, write_json
 
 
 def candidate_sets() -> dict[str, list[dict]]:
+    """Return the predefined tuning candidates for each framework."""
     return {
         "pytorch": [
             {"name": "decay_clip1", "training": {"learning_rate": 1e-3, "min_learning_rate": 5e-5, "grad_clip_norm": 1.0, "early_stopping_patience": 800}},
@@ -30,6 +33,7 @@ def candidate_sets() -> dict[str, list[dict]]:
 
 
 def ranking_key(summary_row: dict) -> tuple:
+    """Rank tuning candidates by success count, accuracy, then runtime."""
     return (
         -int(summary_row["successful_runs_l2"]),
         -int(summary_row["successful_runs_energy"]),
@@ -40,8 +44,9 @@ def ranking_key(summary_row: dict) -> tuple:
 
 
 def main() -> None:
+    """Evaluate the candidate overrides and write tuning summaries."""
     base_config = load_config(ROOT / "config" / "quantum_oscillator.yaml")
-    tuning_root = ensure_dir(ROOT / "results" / "quantum_oscillator" / "tuning")
+    tuning_root = ensure_dir(ROOT / "outputs" / "quantum_oscillator" / "tuning")
     all_rows = []
     best_overrides = {}
 

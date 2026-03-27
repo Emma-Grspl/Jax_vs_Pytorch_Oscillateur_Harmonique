@@ -1,3 +1,5 @@
+"""Run repeated PyTorch and JAX benchmark experiments from one CLI entry point."""
+
 from __future__ import annotations
 
 import argparse
@@ -11,17 +13,18 @@ import torch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from src.quantum_pinn.artifacts import save_benchmark_run_artifacts
-from src.quantum_pinn.benchmark import summarize_runs, write_csv, write_markdown_report
-from src.quantum_pinn.config import load_config, resolve_framework_config
-from src.quantum_pinn.io import ensure_dir, write_json
-from src.quantum_pinn.metrics import align_sign
-from src.quantum_pinn.problem import reference_solution
-from src.quantum_pinn.runner import run_jax_once, run_pytorch_once
-from src.quantum_pinn.system_info import get_system_info
+from src.training.runner import run_jax_once, run_pytorch_once
+from src.utils.artifacts import save_benchmark_run_artifacts
+from src.utils.benchmark import summarize_runs, write_csv, write_markdown_report
+from src.utils.config import load_config, resolve_framework_config
+from src.utils.io import ensure_dir, write_json
+from src.utils.metrics import align_sign
+from src.data.problem import reference_solution
+from src.utils.system_info import get_system_info
 
 
 def _build_predictions(framework: str, config: dict, model_or_params):
+    """Recompute aligned predictions for artifact export after a measured run."""
     x_eval, psi_exact, _ = reference_solution(config["problem"])
     if framework == "pytorch":
         model_or_params.eval()
@@ -35,7 +38,7 @@ def _build_predictions(framework: str, config: dict, model_or_params):
     if framework == "jax":
         import jax.numpy as jnp
 
-        from src.quantum_pinn.jax.model import build_activation, mlp_forward
+        from src.models.jax_model import build_activation, mlp_forward
 
         activation = build_activation(config["model"]["activation"])
         prediction = mlp_forward(
@@ -49,6 +52,7 @@ def _build_predictions(framework: str, config: dict, model_or_params):
 
 
 def main() -> None:
+    """Execute the configured benchmark and write summaries and per-run artifacts."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--repeats", type=int, default=None)
     parser.add_argument("--warmup", type=int, default=None)
@@ -81,7 +85,7 @@ def main() -> None:
     repeats = args.repeats if args.repeats is not None else int(config["benchmark"]["repeats"])
     warmup = args.warmup if args.warmup is not None else int(config["benchmark"]["warmup"])
 
-    results_root = ROOT / config["experiment"]["results_dir"]
+    results_root = ROOT / config["experiment"]["artifact_dir"]
     if args.results_subdir:
         results_root = results_root / args.results_subdir
     results_root = ensure_dir(results_root)
