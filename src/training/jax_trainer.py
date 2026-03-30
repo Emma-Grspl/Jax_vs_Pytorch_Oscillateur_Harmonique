@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 
 import jax
 import jax.numpy as jnp
@@ -131,7 +132,11 @@ class JAXTrainer:
             "data": loss_data,
         }
 
-    def train(self):
+    def train(
+        self,
+        epoch_callback: Callable[[int, float], None] | None = None,
+        callback_every: int = 1,
+    ):
         """Run training, keep the best parameter tree, and return logs and timing."""
         history = {key: [] for key in ("total", "pde", "boundary", "norm", "center", "sign", "data", "energy", "learning_rate")}
 
@@ -169,9 +174,19 @@ class JAXTrainer:
         best_epoch = 1
         best_params = jax.tree_util.tree_map(lambda x: jnp.array(x, copy=True), self.params)
         scheduler.step(best_loss)
+        callback_overhead_seconds = 0.0
+        last_callback_epoch = 0
+
+        if epoch_callback is not None:
+            callback_start = time.perf_counter()
+            epoch_callback(1, compile_seconds)
+            callback_overhead_seconds += time.perf_counter() - callback_start
+            last_callback_epoch = 1
 
         start = time.perf_counter()
+        final_epoch = 1
         for epoch in range(2, self.train_cfg["epochs"] + 1):
+            final_epoch = epoch
             current_lr = jnp.asarray(scheduler.current_lr, dtype=jnp.float32)
             self.params, self.optimizer_state, terms = train_step(self.params, self.optimizer_state, current_lr)
             for key in ("total", "pde", "boundary", "norm", "center", "sign", "data"):
@@ -189,6 +204,13 @@ class JAXTrainer:
                 epochs_without_improvement += 1
             scheduler.step(total_loss)
 
+            if epoch_callback is not None and (epoch % max(callback_every, 1) == 0 or epoch == self.train_cfg["epochs"]):
+                elapsed_seconds = compile_seconds + (time.perf_counter() - start - callback_overhead_seconds)
+                callback_start = time.perf_counter()
+                epoch_callback(epoch, elapsed_seconds)
+                callback_overhead_seconds += time.perf_counter() - callback_start
+                last_callback_epoch = epoch
+
             if epoch % self.train_cfg["log_every"] == 0:
                 print(
                     f"[JAX] epoch={epoch:5d} "
@@ -201,8 +223,14 @@ class JAXTrainer:
                 print(f"[JAX] early stop at epoch={epoch} best_epoch={best_epoch} best_loss={best_loss:.3e}")
                 break
 
+        if epoch_callback is not None and final_epoch != last_callback_epoch:
+            elapsed_seconds = compile_seconds + (time.perf_counter() - start - callback_overhead_seconds)
+            callback_start = time.perf_counter()
+            epoch_callback(final_epoch, elapsed_seconds)
+            callback_overhead_seconds += time.perf_counter() - callback_start
+
         self.params = best_params
-        train_seconds = time.perf_counter() - start
+        train_seconds = time.perf_counter() - start - callback_overhead_seconds
         timing = {
             "compile_seconds": compile_seconds,
             "train_seconds": train_seconds,

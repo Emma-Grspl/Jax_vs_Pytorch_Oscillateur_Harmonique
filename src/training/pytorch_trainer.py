@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import time
+from collections.abc import Callable
 
 import numpy as np
 import torch
@@ -123,7 +124,11 @@ class PyTorchTrainer:
             "data": loss_data,
         }
 
-    def train(self) -> tuple[QuantumPINN, dict[str, list[float]], dict[str, float]]:
+    def train(
+        self,
+        epoch_callback: Callable[[int, float], None] | None = None,
+        callback_every: int = 1,
+    ) -> tuple[QuantumPINN, dict[str, list[float]], dict[str, float]]:
         """Run training, restore the best checkpoint, and return logs and timing."""
         domain_min = self.problem_cfg["domain_min"]
         domain_max = self.problem_cfg["domain_max"]
@@ -155,8 +160,12 @@ class PyTorchTrainer:
         epochs_without_improvement = 0
         scheduler = build_scheduler(self.train_cfg)
         start = time.perf_counter()
+        callback_overhead_seconds = 0.0
+        last_callback_epoch = 0
+        final_epoch = 0
 
         for epoch in range(1, self.train_cfg["epochs"] + 1):
+            final_epoch = epoch
             current_lr = scheduler.current_lr
             self._set_learning_rate(current_lr)
             self.optimizer.zero_grad()
@@ -180,6 +189,13 @@ class PyTorchTrainer:
                 epochs_without_improvement += 1
             scheduler.step(total_loss)
 
+            if epoch_callback is not None and (epoch % max(callback_every, 1) == 0 or epoch == self.train_cfg["epochs"]):
+                elapsed_seconds = time.perf_counter() - start - callback_overhead_seconds
+                callback_start = time.perf_counter()
+                epoch_callback(epoch, elapsed_seconds)
+                callback_overhead_seconds += time.perf_counter() - callback_start
+                last_callback_epoch = epoch
+
             if epoch % self.train_cfg["log_every"] == 0:
                 print(
                     f"[PyTorch] epoch={epoch:5d} "
@@ -192,8 +208,14 @@ class PyTorchTrainer:
                 print(f"[PyTorch] early stop at epoch={epoch} best_epoch={best_epoch} best_loss={best_loss:.3e}")
                 break
 
+        if epoch_callback is not None and final_epoch != last_callback_epoch:
+            elapsed_seconds = time.perf_counter() - start - callback_overhead_seconds
+            callback_start = time.perf_counter()
+            epoch_callback(final_epoch, elapsed_seconds)
+            callback_overhead_seconds += time.perf_counter() - callback_start
+
         self.model.load_state_dict(best_state)
-        train_seconds = time.perf_counter() - start
+        train_seconds = time.perf_counter() - start - callback_overhead_seconds
         timing = {
             "compile_seconds": 0.0,
             "train_seconds": train_seconds,
