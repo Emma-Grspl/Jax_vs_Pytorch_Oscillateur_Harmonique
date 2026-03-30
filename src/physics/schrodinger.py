@@ -6,19 +6,24 @@ from typing import Callable
 
 import jax
 import jax.numpy as jnp
-import torch
+from typing import TYPE_CHECKING
 
 from src.models.jax_model import mlp_forward
 
+if TYPE_CHECKING:
+    import torch
+
 
 def torch_schrodinger_residual(
-    model: torch.nn.Module,
-    x: torch.Tensor,
+    model,
+    x,
     mass: float,
     omega: float,
     hbar: float,
-) -> torch.Tensor:
+) :
     """Compute the stationary Schrödinger residual on a PyTorch collocation grid."""
+    import torch
+
     x = x.clone().detach().requires_grad_(True)
     psi = model(x)
     psi_x = torch.autograd.grad(psi, x, torch.ones_like(psi), create_graph=True)[0]
