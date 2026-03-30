@@ -232,6 +232,14 @@ The most useful generated figures are:
 
 Curated figures should live in `assets/figures/`.
 
+Physics-only snapshot:
+
+![Physics-only snapshot](assets/figures/physics_only_snapshot.png)
+
+Physics-plus-data (`n = 64`) snapshot:
+
+![Physics-plus-data n=64 snapshot](assets/figures/physics_plus_data_64_snapshot.png)
+
 ## Main Findings
 
 ### Physics-only training
