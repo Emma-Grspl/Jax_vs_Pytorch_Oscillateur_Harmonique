@@ -268,6 +268,14 @@ The corresponding comparison figures are available in:
 - `assets/figures/time_to_target_success_rates.png`
 - `assets/figures/time_to_target_cost.png`
 
+Time-to-target success rates:
+
+![Time-to-target success rates](assets/figures/time_to_target_success_rates.png)
+
+Time-to-target cost comparison:
+
+![Time-to-target cost comparison](assets/figures/time_to_target_cost.png)
+
 ## Conclusion
 
 This repository supports a defensible benchmark story:
