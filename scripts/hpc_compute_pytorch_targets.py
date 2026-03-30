@@ -1,0 +1,46 @@
+"""Forward Jean Zay CLI arguments to the PyTorch target computation."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main() -> None:
+    """Parse HPC wrapper arguments and launch the PyTorch target subprocess."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", choices=["cpu", "cuda", "auto"], default="auto")
+    parser.add_argument("--tag", default=None)
+    parser.add_argument("--repeats", type=int, default=None)
+    parser.add_argument("--warmup", type=int, default=None)
+    parser.add_argument("--objective", choices=["physics_only", "physics_plus_data"], default=None)
+    parser.add_argument("--n-data", type=int, default=None)
+    parser.add_argument("--lambda-data", type=float, default=None)
+    args = parser.parse_args()
+
+    tag = args.tag or os.getenv("SLURM_JOB_ID") or args.device
+    results_subdir = f"hpc_pytorch_targets_{tag}"
+
+    command = [sys.executable, str(ROOT / "scripts" / "compute_pytorch_targets.py")]
+    command += ["--device", args.device, "--tag", tag, "--results-subdir", results_subdir]
+    if args.repeats is not None:
+        command += ["--repeats", str(args.repeats)]
+    if args.warmup is not None:
+        command += ["--warmup", str(args.warmup)]
+    if args.objective is not None:
+        command += ["--objective", args.objective]
+    if args.n_data is not None:
+        command += ["--n-data", str(args.n_data)]
+    if args.lambda_data is not None:
+        command += ["--lambda-data", str(args.lambda_data)]
+
+    raise SystemExit(subprocess.run(command, check=False).returncode)
+
+
+if __name__ == "__main__":
+    main()
